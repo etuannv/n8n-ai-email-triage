@@ -1,0 +1,187 @@
+{
+  "name": "Demo 1 - AI Email Triage (Gmail -> Claude -> Sheet -> Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": true,
+        "filters": {}
+      },
+      "id": "node-gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_GMAIL_CRED",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "senderEmail",
+              "value": "={{ $json.From || $json.from || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "subject",
+              "value": "={{ $json.Subject || $json.subject || '(no subject)' }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "body",
+              "value": "={{ $json.text || $json.snippet || $json.textPlain || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "aiPrompt",
+              "value": "=From: {{ $json.From || $json.from || '' }}\nSubject: {{ $json.Subject || $json.subject || '' }}\nBody:\n{{ $json.text || $json.snippet || $json.textPlain || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-normalize",
+      "name": "Normalize Email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  system: \"You triage incoming emails for a freelance software developer. Classify and summarize the email. Respond with ONLY a valid JSON object, no markdown fences, no preamble, with EXACTLY these keys: category (one of 'hot_lead','question','recruiter','spam','other'), priority (one of 'high','medium','low'), language (ISO code like 'en' or 'vi'), summary (1-2 sentences), suggested_reply (a short 1-2 sentence reply draft in the SAME language as the email). Output nothing except the JSON object.\",\n  messages: [ { role: 'user', content: $json.aiPrompt } ]\n}) }}",
+        "options": {}
+      },
+      "id": "node-anthropic",
+      "name": "Claude: Classify + Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ANTHROPIC_CRED",
+          "name": "Anthropic x-api-key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lấy text trả về từ Claude, bóc JSON, ghép thêm thông tin email gốc.\nconst item = $input.first();\nlet raw = '';\ntry {\n  raw = item.json.content[0].text;\n} catch (e) {\n  throw new Error('Phản hồi Anthropic không như mong đợi: ' + JSON.stringify(item.json).slice(0, 500));\n}\n\nconst clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(clean);\n} catch (e) {\n  parsed = { category: 'other', priority: 'low', language: '', summary: clean.slice(0, 300), suggested_reply: '' };\n}\n\nconst src = $('Normalize Email').first().json;\n\nreturn [{\n  json: {\n    receivedAt: new Date().toISOString(),\n    senderEmail: src.senderEmail,\n    subject: src.subject,\n    category: parsed.category || 'other',\n    priority: parsed.priority || 'low',\n    language: parsed.language || '',\n    summary: parsed.summary || '',\n    suggested_reply: parsed.suggested_reply || ''\n  }\n}];"
+      },
+      "id": "node-parse",
+      "name": "Parse AI JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "node-sheets",
+      "name": "Log to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_SHEETS_CRED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_TELEGRAM_CHAT_ID",
+        "text": "=\uD83D\uDCE8 *{{ $json.category }}*  ·  priority: *{{ $json.priority }}*  ·  {{ $json.language }}\nFrom: {{ $json.senderEmail }}\nSubject: {{ $json.subject }}\n\n{{ $json.summary }}\n\n\u270D\uFE0F Draft reply:\n{{ $json.suggested_reply }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "node-telegram",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CRED",
+          "name": "Telegram bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "Normalize Email", "type": "main", "index": 0 }]]
+    },
+    "Normalize Email": {
+      "main": [[{ "node": "Claude: Classify + Summarize", "type": "main", "index": 0 }]]
+    },
+    "Claude: Classify + Summarize": {
+      "main": [[{ "node": "Parse AI JSON", "type": "main", "index": 0 }]]
+    },
+    "Parse AI JSON": {
+      "main": [[{ "node": "Log to Google Sheet", "type": "main", "index": 0 }]]
+    },
+    "Log to Google Sheet": {
+      "main": [[{ "node": "Telegram Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

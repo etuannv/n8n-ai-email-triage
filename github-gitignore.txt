@@ -1,0 +1,15 @@
+# Secrets — NEVER commit these
+.env
+*.env
+.env.local
+
+# n8n exports that may contain credential IDs
+# (workflow JSON in /workflow/ folder is safe — uses REPLACE_ placeholders)
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
