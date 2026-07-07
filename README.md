@@ -2,7 +2,7 @@
 
 Automatically classify, prioritize, and summarize every incoming email using AI — then log results to Google Sheets and fire instant Telegram alerts for hot leads.
 
-**Live demo:** [Watch on YouTube](https://www.youtube.com/channel/etuannv) <!-- thay bằng link YouTube thật -->  
+**Live demo:** [Watch on YouTube](https://youtu.be/u2z3gkxVXIM)
 **Portfolio:** [Upwork case study](https://www.upwork.com/freelancers/etuannv?p=2069729811119497216)
 
 ---
