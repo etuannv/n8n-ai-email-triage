@@ -140,6 +140,10 @@ n8n-ai-email-triage/
 ```
 
 ---
+## Related Project
+→ [n8n-ai-lead-capture-airtable](https://github.com/etuannv/n8n-ai-lead-capture-airtable)
+
+---
 
 ## Author
 
